@@ -8,7 +8,7 @@ namespace Server;
 public class ControlHubState
 {
     public string? ControllerClientId { get; set; }
-    public ConcurrentDictionary<string,string> ConnectionToClient { get; } = new();
+    public ConcurrentDictionary<string, string> ConnectionToClient { get; } = new();
 }
 
 public class ControlHub : Hub
@@ -33,7 +33,15 @@ public class ControlHub : Hub
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
-        _state.ConnectionToClient.TryRemove(Context.ConnectionId, out _);
+        if (_state.ConnectionToClient.TryRemove(Context.ConnectionId, out var clientId))
+        {
+            // If the disconnected client was the controller, clear controller state and notify
+            if (string.Equals(clientId, _state.ControllerClientId, StringComparison.OrdinalIgnoreCase))
+            {
+                _state.ControllerClientId = null;
+                _ = Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.ControllerChanged, new { controller = (string?)null }));
+            }
+        }
         return base.OnDisconnectedAsync(exception);
     }
 
@@ -44,10 +52,27 @@ public class ControlHub : Hub
         return Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.Heartbeat, new { hello = hello.ClientId }));
     }
 
+    public Task BecomeController()
+    {
+        if (_state.ConnectionToClient.TryGetValue(Context.ConnectionId, out var clientId))
+        {
+            _state.ControllerClientId = clientId;
+            Log.Information("Controller set via hub by {ClientId}", clientId);
+            return Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.ControllerChanged, new { controller = clientId }));
+        }
+        return Task.CompletedTask;
+    }
+
     public Task SendMouseEvent(MouseEventMessage msg)
     {
         if (!IsController(Context.ConnectionId)) return Task.CompletedTask;
-        return Clients.Others.SendAsync("ReceiveEnvelope", new Envelope(MessageType.MouseEvent, msg));
+        // Stamp the sender's clientId server-side to ensure correctness
+        if (_state.ConnectionToClient.TryGetValue(Context.ConnectionId, out var senderClientId))
+        {
+            var stamped = msg with { ControllerClientId = senderClientId };
+            return Clients.Others.SendAsync("ReceiveEnvelope", new Envelope(MessageType.MouseEvent, stamped));
+        }
+        return Task.CompletedTask;
     }
 
     public Task SendFileSync(FileSyncMessage msg)
@@ -61,4 +86,3 @@ public class ControlHub : Hub
         return string.Equals(clientId, _state.ControllerClientId, StringComparison.OrdinalIgnoreCase);
     }
 }
-

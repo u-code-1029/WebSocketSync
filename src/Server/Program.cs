@@ -6,6 +6,7 @@ using Serilog;
 using Shared;
 using System.Text.Json;
 using Server;
+using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -83,6 +84,14 @@ app.MapPost("/api/sync/controller/{clientId}", async (string clientId, ControlHu
         await hub.Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.ControllerChanged, new { controller = (string?)null }));
         return Results.Ok(new { controller = (string?)null });
     }
+    // Validate that the requested client is currently connected via the hub
+    var isConnected = state.ConnectionToClient.Values.Any(v => string.Equals(v, clientId, StringComparison.OrdinalIgnoreCase));
+    if (!isConnected)
+    {
+        Log.Warning("Attempt to set controller to non-connected client {ClientId}", clientId);
+        return Results.NotFound(new { error = "Client not connected", clientId });
+    }
+
     state.ControllerClientId = clientId;
     Log.Information("Controller set to {ClientId}", clientId);
     await hub.Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.ControllerChanged, new { controller = clientId }));

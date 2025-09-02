@@ -4,16 +4,25 @@ using System.Windows.Input;
 using System;
 using MouseAction = Shared.MouseAction;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using Wpf.Ui.Controls;
+using System.ComponentModel;
+using System.Windows.Threading;
 
 namespace Client;
 
 public partial class MainWindow : Window
 {
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+        DataContextChanged += MainWindow_DataContextChanged;
+    }
 
     private DateTime _lastMouseMoveSent = DateTime.MinValue;
     private (double x, double y) _lastNorm = (-1, -1);
     private const double MinMoveIntervalMs = 16.0; // ~60 Hz
+    private DateTime _lastMouseMoveLogged = DateTime.MinValue;
+    private const double MinMoveLogIntervalMs = 200.0; // reduce log spam
 
     private void Browse_Click(object sender, RoutedEventArgs e)
     {
@@ -30,71 +39,92 @@ public partial class MainWindow : Window
         catch { }
     }
 
+    
+
     private static ClientWorker Worker => App.HostInstance!.Services.GetService(typeof(ClientWorker)) as ClientWorker ?? throw new InvalidOperationException();
 
     private void Window_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (DataContext is not ClientViewModel vm || !vm.IsController) return;
-        var p = PointToScreen(e.GetPosition(this));
-        var vx = SystemParameters.VirtualScreenLeft;
-        var vy = SystemParameters.VirtualScreenTop;
-        var vw = SystemParameters.VirtualScreenWidth;
-        var vh = SystemParameters.VirtualScreenHeight;
-        var nx = Math.Clamp((p.X - vx) / vw, 0, 1);
-        var ny = Math.Clamp((p.Y - vy) / vh, 0, 1);
-
-        var now = DateTime.UtcNow;
-        if ((now - _lastMouseMoveSent).TotalMilliseconds < MinMoveIntervalMs)
-            return;
-        if (Math.Abs(nx - _lastNorm.x) < 0.002 && Math.Abs(ny - _lastNorm.y) < 0.002)
-            return;
-        _lastMouseMoveSent = now;
-        _lastNorm = (nx, ny);
-        var msg = new MouseEventMessage(Client.ClientWorker.Settings.ClientId ?? Environment.MachineName, MouseAction.Move, nx, ny, 0);
-        _ = Worker.PublishAsync(new Shared.Envelope(MessageType.MouseEvent, msg));
+        // Disabled: global mouse hook handles capture/publish to avoid duplicates
+        return;
     }
 
     private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is not ClientViewModel vm || !vm.IsController) return;
-        var p = PointToScreen(e.GetPosition(this));
-        var vx = SystemParameters.VirtualScreenLeft;
-        var vy = SystemParameters.VirtualScreenTop;
-        var vw = SystemParameters.VirtualScreenWidth;
-        var vh = SystemParameters.VirtualScreenHeight;
-        var nx = Math.Clamp((p.X - vx) / vw, 0, 1);
-        var ny = Math.Clamp((p.Y - vy) / vh, 0, 1);
-        var action = e.ChangedButton == MouseButton.Left ? MouseAction.LeftDown : MouseAction.RightDown;
-        var msg = new MouseEventMessage(Client.ClientWorker.Settings.ClientId ?? Environment.MachineName, action, nx, ny, 0);
-        _ = Worker.PublishAsync(new Shared.Envelope(MessageType.MouseEvent, msg));
+        return;
     }
 
     private void Window_PreviewMouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is not ClientViewModel vm || !vm.IsController) return;
-        var p = PointToScreen(e.GetPosition(this));
-        var vx = SystemParameters.VirtualScreenLeft;
-        var vy = SystemParameters.VirtualScreenTop;
-        var vw = SystemParameters.VirtualScreenWidth;
-        var vh = SystemParameters.VirtualScreenHeight;
-        var nx = Math.Clamp((p.X - vx) / vw, 0, 1);
-        var ny = Math.Clamp((p.Y - vy) / vh, 0, 1);
-        var action = e.ChangedButton == MouseButton.Left ? MouseAction.LeftUp : MouseAction.RightUp;
-        var msg = new MouseEventMessage(Client.ClientWorker.Settings.ClientId ?? Environment.MachineName, action, nx, ny, 0);
-        _ = Worker.PublishAsync(new Shared.Envelope(MessageType.MouseEvent, msg));
+        return;
     }
 
     private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (DataContext is not ClientViewModel vm || !vm.IsController) return;
-        var p = PointToScreen(e.GetPosition(this));
-        var vx = SystemParameters.VirtualScreenLeft;
-        var vy = SystemParameters.VirtualScreenTop;
-        var vw = SystemParameters.VirtualScreenWidth;
-        var vh = SystemParameters.VirtualScreenHeight;
-        var nx = Math.Clamp((p.X - vx) / vw, 0, 1);
-        var ny = Math.Clamp((p.Y - vy) / vh, 0, 1);
-        var msg = new MouseEventMessage(Client.ClientWorker.Settings.ClientId ?? Environment.MachineName, MouseAction.Wheel, nx, ny, e.Delta);
-        _ = Worker.PublishAsync(new Shared.Envelope(MessageType.MouseEvent, msg));
+        return;
+    }
+
+    private void MainWindow_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.OldValue is ClientViewModel oldVm)
+        {
+            try
+            {
+                oldVm.Events.CollectionChanged -= Events_CollectionChanged;
+                oldVm.PropertyChanged -= Vm_PropertyChanged;
+            }
+            catch { }
+        }
+        if (e.NewValue is ClientViewModel newVm)
+        {
+            newVm.Events.CollectionChanged += Events_CollectionChanged;
+            newVm.PropertyChanged += Vm_PropertyChanged;
+        }
+    }
+
+    private void Events_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && e.NewItems != null && e.NewItems.Count > 0)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    var last = e.NewItems[e.NewItems.Count - 1];
+                    EventsList?.ScrollIntoView(last);
+                }
+                catch { }
+            }));
+        }
+    }
+
+    private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not ClientViewModel vm) return;
+        if (e.PropertyName == nameof(ClientViewModel.IsController) || e.PropertyName == nameof(ClientViewModel.CurrentControllerId))
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    ControllerSnackbar.Message = vm.ControllerStatusText;
+                    ControllerSnackbar.Appearance = vm.IsController
+                        ? ControlAppearance.Success
+                        : (vm.HasController ? ControlAppearance.Caution : ControlAppearance.Info);
+                    ControllerSnackbar.IsOpen = true;
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                    EventHandler? handler = null;
+                    handler = (_, __) =>
+                    {
+                        timer.Stop();
+                        ControllerSnackbar.IsOpen = false;
+                        timer.Tick -= handler;
+                    };
+                    timer.Tick += handler;
+                    timer.Start();
+                }
+                catch { }
+            });
+        }
     }
 }
