@@ -5,8 +5,6 @@ using System;
 using MouseAction = Shared.MouseAction;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using Wpf.Ui.Controls;
-using System.ComponentModel;
-using System.Windows.Threading;
 
 namespace Client;
 
@@ -39,7 +37,7 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    
+
 
     private static ClientWorker Worker => App.HostInstance!.Services.GetService(typeof(ClientWorker)) as ClientWorker ?? throw new InvalidOperationException();
 
@@ -71,14 +69,12 @@ public partial class MainWindow : Window
             try
             {
                 oldVm.Events.CollectionChanged -= Events_CollectionChanged;
-                oldVm.PropertyChanged -= Vm_PropertyChanged;
             }
             catch { }
         }
         if (e.NewValue is ClientViewModel newVm)
         {
             newVm.Events.CollectionChanged += Events_CollectionChanged;
-            newVm.PropertyChanged += Vm_PropertyChanged;
         }
     }
 
@@ -98,33 +94,5 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (sender is not ClientViewModel vm) return;
-        if (e.PropertyName == nameof(ClientViewModel.IsController) || e.PropertyName == nameof(ClientViewModel.CurrentControllerId))
-        {
-            Dispatcher.Invoke(() =>
-            {
-                try
-                {
-                    ControllerSnackbar.Message = vm.ControllerStatusText;
-                    ControllerSnackbar.Appearance = vm.IsController
-                        ? ControlAppearance.Success
-                        : (vm.HasController ? ControlAppearance.Caution : ControlAppearance.Info);
-                    ControllerSnackbar.IsOpen = true;
-                    var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-                    EventHandler? handler = null;
-                    handler = (_, __) =>
-                    {
-                        timer.Stop();
-                        ControllerSnackbar.IsOpen = false;
-                        timer.Tick -= handler;
-                    };
-                    timer.Tick += handler;
-                    timer.Start();
-                }
-                catch { }
-            });
-        }
-    }
+
 }

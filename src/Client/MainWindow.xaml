@@ -37,7 +37,11 @@
                         Icon="HandRight28" />
 
                 </StackPanel>
-                <ui:InfoBar Title="Control Status" Message="{Binding ControllerStatusText}" IsOpen="True" Margin="0,0,0,8">
+                <ui:InfoBar
+                    Title="Control Status"
+                    Margin="0,0,0,8"
+                    IsOpen="True"
+                    Message="{Binding ControllerStatusText}">
                     <ui:InfoBar.Style>
                         <Style TargetType="ui:InfoBar">
                             <Setter Property="Severity" Value="Informational" />
@@ -111,12 +115,5 @@
                 </ui:ListView.ItemTemplate>
             </ui:ListView>
         </Grid>
-        <ui:Snackbar x:Name="ControllerSnackbar"
-                     Grid.RowSpan="2"
-                     HorizontalAlignment="Right"
-                     VerticalAlignment="Bottom"
-                     Margin="12"
-                     Title="Control Status"
-                     IsOpen="False" />
     </Grid>
 </Window>
