@@ -32,12 +32,22 @@ public partial class App : Application
 
         HostInstance.Start();
 
+        // Load preferences into VM (if available) before any window binds
+        try
+        {
+            var vm = HostInstance.Services.GetRequiredService<ClientViewModel>();
+            vm.LoadPreferencesIfAvailable();
+        }
+        catch { }
+
         // Apply system theme from WPF UI
         ApplicationThemeManager.Apply(ApplicationThemeManager.GetAppTheme());
 
         // Initialize tray + global hook; start hidden by default
         var tray = HostInstance.Services.GetRequiredService<TrayIconManager>();
         tray.Initialize();
+        // Show main window at startup
+        tray.ShowWindow();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -134,7 +144,7 @@ public sealed class TrayIconManager : IDisposable
         _vm.AddEventCommand.Execute(label);
     }
 
-    private void ShowWindow()
+    public void ShowWindow()
     {
         if (_window == null)
         {

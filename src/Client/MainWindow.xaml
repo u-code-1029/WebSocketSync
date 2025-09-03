@@ -23,6 +23,21 @@
             Margin="12"
             Padding="12">
             <StackPanel Orientation="Vertical">
+                <!-- Settings overview -->
+                <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                    <ui:TextBlock Margin="0,0,8,0" Text="Client Id:" />
+                    <ui:TextBox Width="240" Text="{Binding ClientId}" IsReadOnly="True" />
+                    <ui:TextBlock Margin="12,0,8,0" Text="Mouse Hz:" />
+                    <ui:TextBox Width="80" Text="{Binding MouseMoveHz}" />
+                </StackPanel>
+                <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                    <ui:TextBlock Margin="0,0,8,0" Text="Server URL:" />
+                    <ui:TextBox Width="420" Text="{Binding ServerUrl}" IsReadOnly="True" />
+                </StackPanel>
+                <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
+                    <ui:TextBlock Margin="0,0,8,0" Text="Result Callback:" />
+                    <ui:TextBox Width="420" Text="{Binding ResultCallback}" IsReadOnly="True" />
+                </StackPanel>
                 <StackPanel
                     Margin="0,0,0,8"
                     VerticalAlignment="Center"
@@ -56,6 +71,22 @@
                         </Style>
                     </ui:InfoBar.Style>
                 </ui:InfoBar>
+                <ui:InfoBar
+                    Title="Sync Status"
+                    Margin="0,0,0,8"
+                    IsOpen="True"
+                    Message="{Binding SyncStatusText}">
+                    <ui:InfoBar.Style>
+                        <Style TargetType="ui:InfoBar">
+                            <Setter Property="Severity" Value="Informational" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SyncEnabled}" Value="True">
+                                    <Setter Property="Severity" Value="Success" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ui:InfoBar.Style>
+                </ui:InfoBar>
                 <StackPanel Margin="0,0,0,8" Orientation="Horizontal">
                     <ui:TextBlock Margin="0,0,8,0" Text="Controller:" />
                     <ui:TextBlock Text="{Binding CurrentControllerId}" />
@@ -71,21 +102,37 @@
                         VerticalAlignment="Center"
                         Text="Sync Dir:" />
                     <ui:TextBox Width="420" Text="{Binding SyncDirectory, UpdateSourceTrigger=PropertyChanged}" />
+                    <CheckBox
+                        Margin="8,0,0,0"
+                        IsChecked="{Binding SyncEnabled}"
+                        Content="Enable Sync" />
                     <ui:Button
                         Margin="8,0,0,0"
                         Click="Browse_Click"
+                        IsEnabled="{Binding SyncEnabled}"
                         Content="Browse"
                         Icon="Folder28" />
                     <ui:Button
                         Margin="8,0,0,0"
                         Command="{Binding SaveSyncDirectoryCommand}"
+                        IsEnabled="{Binding SyncEnabled}"
                         Content="Save"
                         Icon="SaveEdit24" />
                     <ui:Button
                         Margin="8,0,0,0"
+                        Command="{Binding OpenSyncDirectoryCommand}"
+                        Content="Open"
+                        Icon="FolderOpen24" />
+                    <ui:Button
+                        Margin="8,0,0,0"
                         Command="{Binding PushInitialSyncCommand}"
+                        IsEnabled="{Binding SyncEnabled}"
                         Content="Push Initial Sync"
                         Icon="ArrowUpload24" />
+                    <CheckBox
+                        Margin="16,0,0,0"
+                        IsChecked="{Binding OverwriteExistingOnly}"
+                        Content="Overwrite for ones that already exists" />
                 </StackPanel>
             </StackPanel>
         </ui:Card>

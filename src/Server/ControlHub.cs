@@ -65,11 +65,19 @@ public class ControlHub : Hub
 
     public Task SendMouseEvent(MouseEventMessage msg)
     {
-        if (!IsController(Context.ConnectionId)) return Task.CompletedTask;
+        if (!IsController(Context.ConnectionId))
+        {
+            if (_state.ConnectionToClient.TryGetValue(Context.ConnectionId, out var cid))
+            {
+                Log.Debug("Drop MouseEvent from non-controller {ClientId}", cid);
+            }
+            return Task.CompletedTask;
+        }
         // Stamp the sender's clientId server-side to ensure correctness
         if (_state.ConnectionToClient.TryGetValue(Context.ConnectionId, out var senderClientId))
         {
             var stamped = msg with { ControllerClientId = senderClientId };
+            Log.Verbose("Forward MouseEvent from {ClientId} to others", senderClientId);
             return Clients.Others.SendAsync("ReceiveEnvelope", new Envelope(MessageType.MouseEvent, stamped));
         }
         return Task.CompletedTask;

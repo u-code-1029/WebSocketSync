@@ -3,6 +3,8 @@ using CommunityToolkit.Mvvm.Input;
 using Serilog;
 using System.Collections.ObjectModel;
 using System.Net.Http;
+using System.Diagnostics;
+using System.IO;
 using Client;
 
 namespace Client;
@@ -16,6 +18,31 @@ public partial class ClientViewModel : ObservableObject
 
     [ObservableProperty]
     private string? syncDirectory;
+
+    // Settings fields shown in the window
+    [ObservableProperty]
+    private string? clientId;
+
+    [ObservableProperty]
+    private string serverUrl = "http://*:2665/hub";
+
+    [ObservableProperty]
+    private string? resultCallback;
+
+    [ObservableProperty]
+    private double? mouseMoveHz;
+
+    [ObservableProperty]
+    private bool startAsController;
+
+    [ObservableProperty]
+    private bool overwriteExistingOnly = true;
+
+    [ObservableProperty]
+    private bool syncEnabled = false;
+
+    [ObservableProperty]
+    private string syncStatusText = "Sync disabled";
 
     [ObservableProperty]
     private bool isController;
@@ -76,12 +103,81 @@ public partial class ClientViewModel : ObservableObject
     public ClientViewModel() { }
     public ClientViewModel(FileSyncManager fileSync) { _fileSync = fileSync; }
 
+    public void LoadPreferencesIfAvailable()
+    {
+        try
+        {
+            var prefs = ClientPrefs.Load();
+            if (prefs != null)
+            {
+                ClientId = prefs.ClientId;
+                ServerUrl = string.IsNullOrWhiteSpace(prefs.ServerUrl) ? ServerUrl : prefs.ServerUrl;
+                ResultCallback = prefs.ResultCallback;
+                SyncDirectory = prefs.SyncDirectory;
+                StartAsController = prefs.Controller;
+                MouseMoveHz = prefs.MouseMoveHz;
+                OverwriteExistingOnly = prefs.OverwriteExistingOnly;
+                SyncEnabled = prefs.SyncEnabled;
+                SyncStatusText = SyncEnabled ? "Sync enabled" : "Sync disabled";
+                AddEvent($"Preferences loaded for {ClientId ?? "<unknown>"}");
+            }
+            else
+            {
+                // Fall back to current runtime settings if present
+                ClientId = ClientWorker.Settings.ClientId;
+                ServerUrl = ClientWorker.Settings.ServerUrl ?? ServerUrl;
+                ResultCallback = ClientWorker.Settings.ResultCallback;
+                SyncDirectory = ClientWorker.Settings.SyncDirectory;
+                StartAsController = ClientWorker.Settings.Controller;
+                MouseMoveHz = ClientWorker.Settings.MouseMoveHz;
+                OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly;
+                SyncEnabled = ClientWorker.Settings.SyncEnabled;
+                SyncStatusText = SyncEnabled ? "Sync enabled" : "Sync disabled";
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Failed to load preferences");
+        }
+    }
+
+    partial void OnOverwriteExistingOnlyChanged(bool value)
+    {
+        try
+        {
+            ClientWorker.Settings.OverwriteExistingOnly = value;
+            ClientPrefs.Save(new ClientSettings
+            {
+                ClientId = ClientWorker.Settings.ClientId,
+                ServerUrl = ClientWorker.Settings.ServerUrl,
+                ResultCallback = ClientWorker.Settings.ResultCallback,
+                SyncDirectory = ClientWorker.Settings.SyncDirectory ?? SyncDirectory,
+                Controller = ClientWorker.Settings.Controller,
+                MouseMoveHz = ClientWorker.Settings.MouseMoveHz,
+                OverwriteExistingOnly = value
+            });
+            AddEvent($"Sync mode: {(value ? "Overwrite existing only" : "Standard apply")}" );
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Failed to persist OverwriteExistingOnly");
+        }
+    }
+
     [RelayCommand]
     private async Task SaveSyncDirectory()
     {
         if (string.IsNullOrWhiteSpace(SyncDirectory)) return;
-        _fileSync?.SetDirectory(SyncDirectory!);
-        AddEvent($"Sync dir set: {SyncDirectory}");
+        if (SyncEnabled)
+        {
+            _fileSync?.SetDirectory(SyncDirectory!);
+            AddEvent($"Sync dir set: {SyncDirectory}");
+        }
+        else
+        {
+            _fileSync?.SetDirectoryNoWatch(SyncDirectory!);
+            AddEvent($"Sync dir saved (disabled): {SyncDirectory}");
+        }
         await Task.CompletedTask;
     }
 
@@ -126,6 +222,73 @@ public partial class ClientViewModel : ObservableObject
         catch (Exception ex)
         {
             Log.Warning(ex, "Request control failed");
+        }
+    }
+
+    [RelayCommand]
+    private async Task OpenSyncDirectory()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(SyncDirectory))
+            {
+                AddEvent("No sync directory set");
+                return;
+            }
+            if (!Directory.Exists(SyncDirectory))
+            {
+                Directory.CreateDirectory(SyncDirectory);
+            }
+            var psi = new ProcessStartInfo
+            {
+                FileName = SyncDirectory,
+                UseShellExecute = true
+            };
+            Process.Start(psi);
+            await Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Failed to open sync directory");
+        }
+    }
+
+    partial void OnSyncEnabledChanged(bool value)
+    {
+        try
+        {
+            ClientWorker.Settings.SyncEnabled = value;
+            if (value)
+            {
+                // Start watching if we have a directory
+                if (!string.IsNullOrWhiteSpace(SyncDirectory))
+                    _fileSync?.SetDirectory(SyncDirectory!);
+                else
+                    AddEvent("Sync enabled, but no directory set");
+                SyncStatusText = "Sync enabled";
+            }
+            else
+            {
+                _fileSync?.StopWatching();
+                SyncStatusText = "Sync disabled";
+            }
+
+            ClientPrefs.Save(new ClientSettings
+            {
+                ClientId = ClientWorker.Settings.ClientId,
+                ServerUrl = ClientWorker.Settings.ServerUrl,
+                ResultCallback = ClientWorker.Settings.ResultCallback,
+                SyncDirectory = ClientWorker.Settings.SyncDirectory ?? SyncDirectory,
+                SyncEnabled = value,
+                Controller = ClientWorker.Settings.Controller,
+                MouseMoveHz = ClientWorker.Settings.MouseMoveHz,
+                OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly
+            });
+            AddEvent(value ? "File sync enabled" : "File sync disabled");
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Failed to toggle SyncEnabled");
         }
     }
 }

@@ -19,13 +19,13 @@ public class FileSyncManager
         _vm = vm;
         // Prefer local persisted setting
         var persisted = ClientPrefs.Load()?.SyncDirectory;
-        if (!string.IsNullOrWhiteSpace(persisted))
+        var dir = !string.IsNullOrWhiteSpace(persisted) ? persisted : ClientWorker.Settings.SyncDirectory;
+        if (!string.IsNullOrWhiteSpace(dir))
         {
-            SetDirectory(persisted!);
-        }
-        else if (!string.IsNullOrWhiteSpace(ClientWorker.Settings.SyncDirectory))
-        {
-            SetDirectory(ClientWorker.Settings.SyncDirectory!);
+            if (ClientWorker.Settings.SyncEnabled)
+                SetDirectory(dir!);
+            else
+                SetDirectoryNoWatch(dir!);
         }
     }
 
@@ -34,7 +34,7 @@ public class FileSyncManager
         Directory.CreateDirectory(path);
         _root = path;
         ClientWorker.Settings.SyncDirectory = path;
-        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz });
+        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, SyncEnabled = ClientWorker.Settings.SyncEnabled, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz, OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly });
         if (_vm != null) _vm.SyncDirectory = path;
         _vm?.AddEventCommand.Execute($"Watching {_root}");
 
@@ -49,6 +49,30 @@ public class FileSyncManager
         _watcher.Changed += (_, e) => OnChange(e.FullPath, FileSyncOp.Update);
         _watcher.Deleted += (_, e) => OnDelete(e.FullPath);
         _watcher.Renamed += (_, e) => { OnDelete(e.OldFullPath); OnChange(e.FullPath, FileSyncOp.Create); };
+    }
+
+    public void SetDirectoryNoWatch(string path)
+    {
+        Directory.CreateDirectory(path);
+        _root = path;
+        ClientWorker.Settings.SyncDirectory = path;
+        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, SyncEnabled = ClientWorker.Settings.SyncEnabled, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz, OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly });
+        if (_vm != null) _vm.SyncDirectory = path;
+        _vm?.AddEventCommand.Execute($"Sync dir set (watching disabled): {_root}");
+        _watcher?.Dispose();
+        _watcher = null;
+    }
+
+    public void StopWatching()
+    {
+        try
+        {
+            _watcher?.Dispose();
+            _watcher = null;
+            if (_root != null)
+                _vm?.AddEventCommand.Execute($"Stopped watching {_root}");
+        }
+        catch { }
     }
 
     private void OnChange(string fullPath, FileSyncOp op)

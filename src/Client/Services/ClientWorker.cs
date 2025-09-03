@@ -43,8 +43,10 @@ public class ClientWorker
                     ServerUrl = Settings.ServerUrl,
                     ResultCallback = Settings.ResultCallback,
                     SyncDirectory = persisted?.SyncDirectory ?? Settings.SyncDirectory,
+                    SyncEnabled = Settings.SyncEnabled,
                     Controller = Settings.Controller,
-                    MouseMoveHz = Settings.MouseMoveHz
+                    MouseMoveHz = Settings.MouseMoveHz,
+                    OverwriteExistingOnly = Settings.OverwriteExistingOnly
                 });
                 _vm.AddEventCommand.Execute($"Generated ClientId: {Settings.ClientId}");
             }
@@ -127,8 +129,48 @@ public class ClientWorker
             switch (env.Type)
             {
                 case MessageType.RunCommand:
-                    _vm.AddEventCommand.Execute("Execute: RunCommand (no return)");
-                    break;
+                    {
+                        try
+                        {
+                            // Deserialize payload to RunCommandRequest
+                            RunCommandRequest req;
+                            if (env.Payload is JsonElement je)
+                            {
+                                req = new RunCommandRequest(
+                                    je.GetProperty("command").GetString()!,
+                                    je.TryGetProperty("arguments", out var a) && a.ValueKind != JsonValueKind.Null ? a.GetString() : null
+                                );
+                            }
+                            else
+                            {
+                                var json = JsonSerializer.Serialize(env.Payload, _json);
+                                req = JsonSerializer.Deserialize<RunCommandRequest>(json, _json)!;
+                            }
+
+                            _vm.AddEventCommand.Execute($"RunCommand: {req.Command} {req.Arguments}");
+
+                            try
+                            {
+                                var psi = new System.Diagnostics.ProcessStartInfo
+                                {
+                                    FileName = req.Command,
+                                    Arguments = req.Arguments ?? string.Empty,
+                                    UseShellExecute = true
+                                };
+                                System.Diagnostics.Process.Start(psi);
+                            }
+                            catch (Exception ex)
+                            {
+                                _vm.AddEventCommand.Execute($"RunCommand failed: {ex.Message}");
+                                Log.Warning(ex, "RunCommand failed");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "Failed parsing RunCommand payload");
+                        }
+                        break;
+                    }
                 case MessageType.RunService:
                     _vm.AddEventCommand.Execute("Execute: RunService and post result");
                     _ = PostServiceResultAsync(new ServiceResult("ExampleService", Guid.NewGuid().ToString("N"), true, "ok"));
@@ -147,11 +189,16 @@ public class ClientWorker
                         try
                         {
                             var controllerId = payload.GetProperty("controllerClientId").GetString();
-                            var action = payload.GetProperty("action").GetString();
+                            string? actionStr = null;
+                            var actionProp = payload.GetProperty("action");
+                            if (actionProp.ValueKind == JsonValueKind.String)
+                                actionStr = actionProp.GetString();
+                            else if (actionProp.ValueKind == JsonValueKind.Number)
+                                actionStr = ((MouseAction)actionProp.GetInt32()).ToString();
                             var nx = payload.GetProperty("normalizedX").GetDouble();
                             var ny = payload.GetProperty("normalizedY").GetDouble();
                             var delta = payload.GetProperty("delta").GetInt32();
-                            _vm.AddEventCommand.Execute($"Mouse {action} from {controllerId} @ ({nx:F3},{ny:F3}){(action?.Equals("Wheel", StringComparison.OrdinalIgnoreCase) == true ? $" d={delta}" : string.Empty)}");
+                            _vm.AddEventCommand.Execute($"Mouse {actionStr} from {controllerId} @ ({nx:F3},{ny:F3}){(actionStr?.Equals("Wheel", StringComparison.OrdinalIgnoreCase) == true ? $" d={delta}" : string.Empty)}");
                         }
                         catch { /* best-effort logging */ }
                         ApplyMouseEvent(payload);
@@ -190,7 +237,12 @@ public class ClientWorker
         {
             var controllerId = payload.GetProperty("controllerClientId").GetString();
             if (string.Equals(controllerId, Settings.ClientId, StringComparison.OrdinalIgnoreCase)) return;
-            var action = Enum.Parse<MouseAction>(payload.GetProperty("action").GetString()!, true);
+            MouseAction action;
+            var actionProp = payload.GetProperty("action");
+            if (actionProp.ValueKind == JsonValueKind.Number)
+                action = (MouseAction)actionProp.GetInt32();
+            else
+                action = Enum.Parse<MouseAction>(actionProp.GetString()!, true);
             var nx = payload.GetProperty("normalizedX").GetDouble();
             var ny = payload.GetProperty("normalizedY").GetDouble();
             nx = Math.Clamp(nx, 0, 1);
@@ -256,7 +308,11 @@ public class ClientWorker
             }
             // Prevent echo loops by suppressing watcher events for this path
             _syncManager.MarkRemoteChange(rel);
-            FileSyncApplier.Apply(root!, new FileSyncMessage(sender!, rel, op, content));
+            var msg = new FileSyncMessage(sender!, rel, op, content);
+            if (ClientWorker.Settings.OverwriteExistingOnly)
+                FileSyncApplier.ApplyOverwriteExistingOnly(root!, msg);
+            else
+                FileSyncApplier.Apply(root!, msg);
         }
         catch (Exception ex)
         {
