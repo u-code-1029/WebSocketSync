@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Client;
 
 public class ClientSettings
@@ -10,4 +12,7 @@ public class ClientSettings
     public bool Controller { get; set; }
     public double? MouseMoveHz { get; set; }
     public bool OverwriteExistingOnly { get; set; } = true;
+    public List<string>? SelectedTargets { get; set; }
+    public bool FollowControllerMouse { get; set; } = true;
+    public int? ClientsRefreshSeconds { get; set; }
 }

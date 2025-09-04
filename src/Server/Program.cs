@@ -38,6 +38,21 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 // SignalR hub endpoint
 app.MapHub<ControlHub>("/hub");
 
+// HTTP API: List currently connected clients
+app.MapGet("/api/clients/connected", (ControlHubState state) =>
+{
+    try
+    {
+        var clients = state.ConnectionToClient.Values.Distinct().OrderBy(s => s).ToArray();
+        return Results.Ok(clients);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error in /api/clients/connected");
+        return Results.Problem("An unexpected error occurred.");
+    }
+});
+
 // HTTP API: Task A.1 Run command (broadcast to clients). Validate first.
 app.MapPost("/api/commands/run-cmd", async (RunCommandRequest req, string? targetClientId, IHubContext<ControlHub> hub, ControlHubState state) =>
 {
@@ -62,12 +77,14 @@ app.MapPost("/api/commands/run-cmd", async (RunCommandRequest req, string? targe
             }
 
             await hub.Clients.Clients(targets).SendAsync("ReceiveEnvelope", new Envelope(MessageType.RunCommand, req));
-            Log.Information("Sent RunCommand to {ClientId}: {Command} {Arguments}", targetClientId, req.Command, req.Arguments);
+            var argsForLog = req.Arguments is null ? string.Empty : string.Join(" ", req.Arguments);
+            Log.Information("Sent RunCommand to {ClientId}: {Command} {Arguments}", targetClientId, req.Command, argsForLog);
         }
         else
         {
             await hub.Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.RunCommand, req));
-            Log.Information("Broadcasted RunCommand: {Command} {Arguments}", req.Command, req.Arguments);
+            var argsForLog = req.Arguments is null ? string.Empty : string.Join(" ", req.Arguments);
+            Log.Information("Broadcasted RunCommand: {Command} {Arguments}", req.Command, argsForLog);
         }
 
         return Results.Accepted("/api/commands/run-cmd");

@@ -71,6 +71,25 @@
                         </Style>
                     </ui:InfoBar.Style>
                 </ui:InfoBar>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <CheckBox IsChecked="{Binding FollowControllerMouse}" Content="Follow Controller Mouse" />
+                </StackPanel>
+                <!-- Connected clients selection -->
+                <StackPanel Margin="0,0,0,8">
+                    <ui:TextBlock Text="Connected Clients" FontWeight="Bold" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
+                        <ui:Button Margin="0,0,8,0" Command="{Binding RefreshClientsCommand}" Content="Refresh" Icon="ArrowClockwise28" />
+                        <ui:Button Margin="0,0,8,0" Command="{Binding SelectAllClientsCommand}" Content="Select All" Icon="Checkmark24" />
+                        <ui:Button Margin="0,0,8,0" Command="{Binding SelectNoneClientsCommand}" Content="Select None" Icon="Dismiss24" />
+                    </StackPanel>
+                    <ItemsControl ItemsSource="{Binding ConnectedClients}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Content="{Binding Id}" IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
                 <ui:InfoBar
                     Title="Sync Status"
                     Margin="0,0,0,8"
@@ -133,6 +152,23 @@
                         Margin="16,0,0,0"
                         IsChecked="{Binding OverwriteExistingOnly}"
                         Content="Overwrite for ones that already exists" />
+                </StackPanel>
+                <!-- Run command to selected clients -->
+                <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                    <ui:TextBlock Margin="0,0,8,0" Text="Command:" />
+                    <ui:TextBox Width="280" Text="{Binding RunCommandPath, UpdateSourceTrigger=PropertyChanged}" />
+                    <ui:TextBlock Margin="8,0,8,0" Text="Args:" />
+                    <ui:TextBox Width="240" Text="{Binding RunCommandArgs, UpdateSourceTrigger=PropertyChanged}" />
+                    <ui:Button Margin="8,0,0,0" Command="{Binding SendRunCommandCommand}" Content="Send to Selected" Icon="Send28" />
+                </StackPanel>
+
+                <!-- Run service to selected clients -->
+                <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                    <ui:TextBlock Margin="0,0,8,0" Text="Service:" />
+                    <ui:TextBox Width="240" Text="{Binding ServiceName, UpdateSourceTrigger=PropertyChanged}" />
+                    <ui:TextBlock Margin="8,0,8,0" Text="Params (k=v; a=b):" />
+                    <ui:TextBox Width="320" Text="{Binding ServiceParams, UpdateSourceTrigger=PropertyChanged}" />
+                    <ui:Button Margin="8,0,0,0" Command="{Binding SendServiceRunCommand}" Content="Send Service to Selected" Icon="Rocket24" />
                 </StackPanel>
             </StackPanel>
         </ui:Card>

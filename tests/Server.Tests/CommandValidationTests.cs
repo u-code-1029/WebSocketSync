@@ -19,8 +19,7 @@ public class CommandValidationTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task ValidateUserCommand_Default_ReturnsAccepted()
     {
-        var resp = await _client.PostAsJsonAsync("/api/commands/run-cmd", new RunCommandRequest("cmd", "/c echo ok"));
+        var resp = await _client.PostAsJsonAsync("/api/commands/run-cmd", new RunCommandRequest("cmd", new[] { "/c", "echo", "ok" }));
         Assert.Equal(System.Net.HttpStatusCode.Accepted, resp.StatusCode);
     }
 }
-

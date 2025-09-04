@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Windows;
 using System.IO;
+using System.Linq;
 
 namespace Client;
 
@@ -19,11 +20,17 @@ public class ClientWorker
     internal static ClientSettings Settings = new();
     private HubConnection? _hub;
     private readonly FileSyncManager _syncManager;
+    private DateTime _lastClientsRefresh = DateTime.MinValue;
+    private TimeSpan _clientsRefreshInterval = TimeSpan.FromSeconds(5);
 
     public ClientWorker(ClientViewModel vm, IOptions<ClientSettings> options, FileSyncManager fileSync)
     {
         _vm = vm;
         Settings = options.Value;
+        // Configure clients refresh interval from settings; default to 5 seconds
+        var secs = Settings.ClientsRefreshSeconds;
+        if (secs.HasValue && secs.Value > 0 && secs.Value <= 60)
+            _clientsRefreshInterval = TimeSpan.FromSeconds(secs.Value);
         _syncManager = fileSync;
 
         // Ensure unique, persisted ClientId if none configured
@@ -34,7 +41,8 @@ public class ClientWorker
         }
         if (string.IsNullOrWhiteSpace(Settings.ClientId))
         {
-            Settings.ClientId = $"client-{Guid.NewGuid():N}";
+            // Default to machine name for simplicity if not configured
+            Settings.ClientId = Environment.MachineName;
             try
             {
                 ClientPrefs.Save(new ClientSettings
@@ -46,13 +54,16 @@ public class ClientWorker
                     SyncEnabled = Settings.SyncEnabled,
                     Controller = Settings.Controller,
                     MouseMoveHz = Settings.MouseMoveHz,
-                    OverwriteExistingOnly = Settings.OverwriteExistingOnly
+                    OverwriteExistingOnly = Settings.OverwriteExistingOnly,
+                    SelectedTargets = persisted?.SelectedTargets,
+                    FollowControllerMouse = persisted?.FollowControllerMouse ?? Settings.FollowControllerMouse,
+                    ClientsRefreshSeconds = Settings.ClientsRefreshSeconds
                 });
-                _vm.AddEventCommand.Execute($"Generated ClientId: {Settings.ClientId}");
+                _vm.AddEventCommand.Execute($"Using default ClientId: {Settings.ClientId}");
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to persist generated ClientId");
+                Log.Warning(ex, "Failed to persist default ClientId");
             }
         }
 
@@ -81,6 +92,8 @@ public class ClientWorker
                     await SendScreenshotAsync(token);
 
                     await RefreshControllerAsync(token);
+
+                    try { await _vm.RefreshClientsCommand.ExecuteAsync(null); } catch { }
                 }
             }
             catch (Exception ex)
@@ -89,6 +102,21 @@ public class ClientWorker
                 _vm.ConnectionStatus = "Disconnected - retrying";
                 await Task.Delay(TimeSpan.FromSeconds(5), token);
             }
+
+            // Periodic connected-clients refresh while connected
+            try
+            {
+                if (_hub != null && _hub.State == HubConnectionState.Connected)
+                {
+                    var now = DateTime.UtcNow;
+                    if (now - _lastClientsRefresh >= _clientsRefreshInterval)
+                    {
+                        _lastClientsRefresh = now;
+                        try { await _vm.RefreshClientsCommand.ExecuteAsync(null); } catch { }
+                    }
+                }
+            }
+            catch { }
 
             await Task.Delay(TimeSpan.FromSeconds(1), token);
         }
@@ -128,6 +156,9 @@ public class ClientWorker
         {
             switch (env.Type)
             {
+                case MessageType.Heartbeat:
+                    try { _ = _vm.RefreshClientsCommand.ExecuteAsync(null); } catch { }
+                    break;
                 case MessageType.RunCommand:
                     {
                         try
@@ -136,10 +167,31 @@ public class ClientWorker
                             RunCommandRequest req;
                             if (env.Payload is JsonElement je)
                             {
-                                req = new RunCommandRequest(
-                                    je.GetProperty("command").GetString()!,
-                                    je.TryGetProperty("arguments", out var a) && a.ValueKind != JsonValueKind.Null ? a.GetString() : null
-                                );
+                                string cmd = je.GetProperty("command").GetString()!;
+                                string[]? args = null;
+                                if (je.TryGetProperty("arguments", out var a) && a.ValueKind != JsonValueKind.Null)
+                                {
+                                    if (a.ValueKind == JsonValueKind.Array)
+                                    {
+                                        var list = new System.Collections.Generic.List<string>();
+                                        foreach (var item in a.EnumerateArray())
+                                        {
+                                            if (item.ValueKind == JsonValueKind.String)
+                                                list.Add(item.GetString()!);
+                                            else
+                                                list.Add(item.ToString());
+                                        }
+                                        args = list.ToArray();
+                                    }
+                                    else if (a.ValueKind == JsonValueKind.String)
+                                    {
+                                        // Back-compat: accept a single string and split on whitespace
+                                        var s = a.GetString();
+                                        if (!string.IsNullOrWhiteSpace(s))
+                                            args = s!.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                                    }
+                                }
+                                req = new RunCommandRequest(cmd, args);
                             }
                             else
                             {
@@ -147,14 +199,23 @@ public class ClientWorker
                                 req = JsonSerializer.Deserialize<RunCommandRequest>(json, _json)!;
                             }
 
-                            _vm.AddEventCommand.Execute($"RunCommand: {req.Command} {req.Arguments}");
+                            var argsText = req.Arguments is null ? string.Empty : string.Join(" ", req.Arguments);
+                            _vm.AddEventCommand.Execute($"RunCommand: {req.Command} {argsText}");
 
                             try
                             {
+                                static string JoinArgs(string[] args)
+                                {
+                                    return string.Join(" ", args.Select(a =>
+                                        string.IsNullOrEmpty(a) || a.IndexOfAny(new[] { ' ', '\t', '"' }) >= 0
+                                            ? "\"" + a.Replace("\"", "\\\"") + "\""
+                                            : a));
+                                }
+
                                 var psi = new System.Diagnostics.ProcessStartInfo
                                 {
                                     FileName = req.Command,
-                                    Arguments = req.Arguments ?? string.Empty,
+                                    Arguments = req.Arguments is null ? string.Empty : JoinArgs(req.Arguments),
                                     UseShellExecute = true
                                 };
                                 System.Diagnostics.Process.Start(psi);
@@ -236,6 +297,11 @@ public class ClientWorker
         try
         {
             var controllerId = payload.GetProperty("controllerClientId").GetString();
+            if (!ClientWorker.Settings.FollowControllerMouse)
+            {
+                _vm.AddEventCommand.Execute($"Mouse event from {controllerId} ignored (follow disabled)");
+                return;
+            }
             if (string.Equals(controllerId, Settings.ClientId, StringComparison.OrdinalIgnoreCase)) return;
             MouseAction action;
             var actionProp = payload.GetProperty("action");
@@ -247,10 +313,11 @@ public class ClientWorker
             var ny = payload.GetProperty("normalizedY").GetDouble();
             nx = Math.Clamp(nx, 0, 1);
             ny = Math.Clamp(ny, 0, 1);
-            var vx = SystemParameters.VirtualScreenLeft;
-            var vy = SystemParameters.VirtualScreenTop;
-            var vw = SystemParameters.VirtualScreenWidth;
-            var vh = SystemParameters.VirtualScreenHeight;
+            var vs = Native.GetVirtualScreenPixels();
+            var vx = vs.left;
+            var vy = vs.top;
+            var vw = vs.width;
+            var vh = vs.height;
             var x = (int)(vx + nx * vw);
             var y = (int)(vy + ny * vh);
             var delta = payload.GetProperty("delta").GetInt32();
@@ -343,16 +410,17 @@ public class ClientWorker
         _hub.On<Envelope>("ReceiveEnvelope", env => HandleEnvelope(env));
         _hub.Reconnecting += error => { _vm.ConnectionStatus = "Reconnecting..."; return Task.CompletedTask; };
         _hub.Reconnected += async id =>
-        {
-            _vm.ConnectionStatus = "Connected";
+            {
+                _vm.ConnectionStatus = "Connected";
             try
             {
                 await _hub.InvokeAsync("Hello", new ClientHello(Settings.ClientId ?? Environment.MachineName, Environment.MachineName, Environment.UserName));
                 await SendScreenshotAsync(CancellationToken.None);
                 await RefreshControllerAsync(CancellationToken.None);
+                try { await _vm.RefreshClientsCommand.ExecuteAsync(null); } catch { }
             }
-            catch (Exception ex)
-            {
+                catch (Exception ex)
+                {
                 Log.Warning(ex, "Post-reconnect hello/screenshot failed");
             }
         };

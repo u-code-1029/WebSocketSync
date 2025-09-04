@@ -9,6 +9,7 @@ public class ControlHubState
 {
     public string? ControllerClientId { get; set; }
     public ConcurrentDictionary<string, string> ConnectionToClient { get; } = new();
+    public object SyncRoot { get; } = new();
 }
 
 public class ControlHub : Hub
@@ -25,7 +26,17 @@ public class ControlHub : Hub
         var clientId = Context.GetHttpContext()?.Request.Query["clientId"].ToString();
         if (!string.IsNullOrWhiteSpace(clientId))
         {
-            _state.ConnectionToClient[Context.ConnectionId] = clientId!;
+            lock (_state.SyncRoot)
+            {
+                var exists = _state.ConnectionToClient.Values.Any(v => string.Equals(v, clientId, StringComparison.OrdinalIgnoreCase));
+                if (exists)
+                {
+                    Log.Warning("Duplicate clientId {ClientId} attempted connection; refusing", clientId);
+                    Context.Abort();
+                    return Task.CompletedTask;
+                }
+                _state.ConnectionToClient[Context.ConnectionId] = clientId!;
+            }
             Log.Information("Hub connected {Conn} => {Client}", Context.ConnectionId, clientId);
         }
         return base.OnConnectedAsync();
@@ -47,7 +58,19 @@ public class ControlHub : Hub
 
     public Task Hello(ClientHello hello)
     {
-        _state.ConnectionToClient[Context.ConnectionId] = hello.ClientId;
+        // Enforce uniqueness on Hello as well (belt-and-suspenders)
+        lock (_state.SyncRoot)
+        {
+            var exists = _state.ConnectionToClient
+                .Any(kvp => kvp.Value.Equals(hello.ClientId, StringComparison.OrdinalIgnoreCase) && kvp.Key != Context.ConnectionId);
+            if (exists)
+            {
+                Log.Warning("Duplicate Hello from {Client}; aborting connection", hello.ClientId);
+                Context.Abort();
+                return Task.CompletedTask;
+            }
+            _state.ConnectionToClient[Context.ConnectionId] = hello.ClientId;
+        }
         Log.Information("Hello from {Client}", hello.ClientId);
         return Clients.All.SendAsync("ReceiveEnvelope", new Envelope(MessageType.Heartbeat, new { hello = hello.ClientId }));
     }

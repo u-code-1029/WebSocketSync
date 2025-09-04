@@ -45,10 +45,11 @@ public sealed class GlobalMouseHook : IDisposable
         {
             var msg = wParam.ToInt32();
             var data = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-            var vx = SystemParameters.VirtualScreenLeft;
-            var vy = SystemParameters.VirtualScreenTop;
-            var vw = SystemParameters.VirtualScreenWidth;
-            var vh = SystemParameters.VirtualScreenHeight;
+            var vs = Native.GetVirtualScreenPixels();
+            var vx = (double)vs.left;
+            var vy = (double)vs.top;
+            var vw = (double)vs.width;
+            var vh = (double)vs.height;
             var nx = Math.Clamp((data.pt.x - vx) / vw, 0, 1);
             var ny = Math.Clamp((data.pt.y - vy) / vh, 0, 1);
 

@@ -34,7 +34,7 @@ public class FileSyncManager
         Directory.CreateDirectory(path);
         _root = path;
         ClientWorker.Settings.SyncDirectory = path;
-        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, SyncEnabled = ClientWorker.Settings.SyncEnabled, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz, OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly });
+        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, SyncEnabled = ClientWorker.Settings.SyncEnabled, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz, OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly, SelectedTargets = ClientWorker.Settings.SelectedTargets, FollowControllerMouse = ClientWorker.Settings.FollowControllerMouse });
         if (_vm != null) _vm.SyncDirectory = path;
         _vm?.AddEventCommand.Execute($"Watching {_root}");
 
@@ -56,7 +56,7 @@ public class FileSyncManager
         Directory.CreateDirectory(path);
         _root = path;
         ClientWorker.Settings.SyncDirectory = path;
-        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, SyncEnabled = ClientWorker.Settings.SyncEnabled, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz, OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly });
+        ClientPrefs.Save(new ClientSettings { ClientId = ClientWorker.Settings.ClientId, ServerUrl = ClientWorker.Settings.ServerUrl, ResultCallback = ClientWorker.Settings.ResultCallback, SyncDirectory = path, SyncEnabled = ClientWorker.Settings.SyncEnabled, Controller = ClientWorker.Settings.Controller, MouseMoveHz = ClientWorker.Settings.MouseMoveHz, OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly, SelectedTargets = ClientWorker.Settings.SelectedTargets, FollowControllerMouse = ClientWorker.Settings.FollowControllerMouse });
         if (_vm != null) _vm.SyncDirectory = path;
         _vm?.AddEventCommand.Execute($"Sync dir set (watching disabled): {_root}");
         _watcher?.Dispose();

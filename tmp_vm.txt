@@ -66,9 +66,6 @@ public partial class ClientViewModel : ObservableObject
     [ObservableProperty]
     private bool hasController;
 
-    [ObservableProperty]
-    private bool followControllerMouse = true;
-
     partial void OnIsControllerChanged(bool value)
     {
         ControlButtonText = value ? "Release Control" : "Request Control";
@@ -200,41 +197,13 @@ public partial class ClientViewModel : ObservableObject
                 SyncDirectory = ClientWorker.Settings.SyncDirectory ?? SyncDirectory,
                 Controller = ClientWorker.Settings.Controller,
                 MouseMoveHz = ClientWorker.Settings.MouseMoveHz,
-                OverwriteExistingOnly = value,
-                SelectedTargets = ClientWorker.Settings.SelectedTargets,
-                FollowControllerMouse = ClientWorker.Settings.FollowControllerMouse
+                OverwriteExistingOnly = value
             });
             AddEvent($"Sync mode: {(value ? "Overwrite existing only" : "Standard apply")}" );
         }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "Failed to persist OverwriteExistingOnly");
-        }
-    }
-
-    partial void OnFollowControllerMouseChanged(bool value)
-    {
-        try
-        {
-            ClientWorker.Settings.FollowControllerMouse = value;
-            ClientPrefs.Save(new ClientSettings
-            {
-                ClientId = ClientWorker.Settings.ClientId,
-                ServerUrl = ClientWorker.Settings.ServerUrl,
-                ResultCallback = ClientWorker.Settings.ResultCallback,
-                SyncDirectory = ClientWorker.Settings.SyncDirectory ?? SyncDirectory,
-                SyncEnabled = ClientWorker.Settings.SyncEnabled,
-                Controller = ClientWorker.Settings.Controller,
-                MouseMoveHz = ClientWorker.Settings.MouseMoveHz,
-                OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly,
-                SelectedTargets = ClientWorker.Settings.SelectedTargets,
-                FollowControllerMouse = value
-            });
-            AddEvent(value ? "Following controller mouse" : "Stopped following controller mouse");
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Warning(ex, "Failed to persist FollowControllerMouse");
         }
     }
 
@@ -509,8 +478,7 @@ public partial class ClientViewModel : ObservableObject
                 Controller = ClientWorker.Settings.Controller,
                 MouseMoveHz = ClientWorker.Settings.MouseMoveHz,
                 OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly,
-                SelectedTargets = selected,
-                FollowControllerMouse = ClientWorker.Settings.FollowControllerMouse
+                SelectedTargets = selected
             });
         }
         catch (Exception ex)
@@ -576,9 +544,7 @@ public partial class ClientViewModel : ObservableObject
                 SyncEnabled = value,
                 Controller = ClientWorker.Settings.Controller,
                 MouseMoveHz = ClientWorker.Settings.MouseMoveHz,
-                OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly,
-                SelectedTargets = ClientWorker.Settings.SelectedTargets,
-                FollowControllerMouse = ClientWorker.Settings.FollowControllerMouse
+                OverwriteExistingOnly = ClientWorker.Settings.OverwriteExistingOnly
             });
             AddEvent(value ? "File sync enabled" : "File sync disabled");
         }
@@ -588,4 +554,5 @@ public partial class ClientViewModel : ObservableObject
         }
     }
 }
+
 

@@ -18,5 +18,22 @@ public static class Native
 
     public static void MouseEvent(uint flags, int x, int y, int data, int extra)
         => mouse_event(flags, (uint)x, (uint)y, (uint)data, UIntPtr.Zero);
-}
 
+    // Physical pixel virtual screen metrics (avoid WPF DIPs for DPI-correct mapping)
+    private const int SM_XVIRTUALSCREEN = 76;
+    private const int SM_YVIRTUALSCREEN = 77;
+    private const int SM_CXVIRTUALSCREEN = 78;
+    private const int SM_CYVIRTUALSCREEN = 79;
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    public static (int left, int top, int width, int height) GetVirtualScreenPixels()
+    {
+        var left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        var top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        var width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        var height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        return (left, top, width, height);
+    }
+}

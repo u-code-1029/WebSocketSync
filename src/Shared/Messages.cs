@@ -28,7 +28,7 @@ public record ClientHello(
 
 public record RunCommandRequest(
     string Command,
-    string? Arguments
+    string[]? Arguments
 );
 
 public record RunServiceRequest(
